@@ -4,7 +4,7 @@
 set -eu
 VERSION=1.14.4
 ASSET="sing-box-${VERSION}-linux-armv7.tar.gz"
-URL="https://dl.sing-box.org/releases/v${VERSION}/${ASSET}"
+URL="https://github.com/SagerNet/sing-box/releases/download/v${VERSION}/${ASSET}"
 OUT="${1:-$HOME/LG-Luma/vpn-preflight}"
 mkdir -p "$OUT"
 echo "Downloading official release: $URL"
