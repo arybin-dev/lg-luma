@@ -37,3 +37,10 @@ Decision: VPN runs on the TV itself and is switched independently from the route
 3. Router configuration remains unchanged.
 4. Status remains accurate after reboot and connection loss.
 5. Original Luma Home takeover and SSH recovery remain functional.
+
+## Candidate engine identified (2026-10-31)
+- Official sing-box v1.14.4 provides `sing-box-1.14.4-linux-armv7.tar.gz` and ARMv7 musl/glibc variants. Official release directory: https://dl.sing-box.org/releases/latest/
+- Start with the ordinary ARMv7 archive, NOT the glibc NaiveProxy variant: LG has glibc 2.28 whereas that optional feature's CGO variant requires >=2.31.
+- This is a candidate, not a compatibility guarantee: the LG kernel is 4.4.84 and its TUN interface has not been exercised.
+- Next preflight: obtain upstream release asset on a build machine, verify hash against upstream release manifest if available, inspect ELF architecture and linkage, then transfer only to a temporary TV path and run `version` (no config, tunnel, routes, DNS or autostart).
+- Stop if the binary cannot execute; do not force libraries or modify system linker paths.
