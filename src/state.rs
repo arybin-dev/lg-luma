@@ -1015,9 +1015,19 @@ impl State {
                 })
                 .collect();
             if let Some(index) = slots.iter().position(|slot| ids[*slot] == id) {
+                // Reordering follows the visible five-column grid. Hidden or
+                // unavailable favorites do not consume grid slots.
+                let columns = HOME_GRID_COLUMNS;
+                let next_row = (index / columns + 1) * columns;
                 let next = match direction {
-                    Direction::Left => index.saturating_sub(1),
-                    Direction::Right => (index + 1).min(slots.len() - 1),
+                    Direction::Left if index % columns > 0 => index - 1,
+                    Direction::Right if index % columns + 1 < columns && index + 1 < slots.len() => {
+                        index + 1
+                    }
+                    Direction::Up if index >= columns => index - columns,
+                    Direction::Down if next_row < slots.len() => {
+                        (index + columns).min(slots.len() - 1)
+                    }
                     _ => index,
                 };
                 if next != index {
@@ -1035,17 +1045,27 @@ impl State {
             {
                 let apps = self.apps();
                 if let Some(index) = apps.iter().position(|app| &app.id == id) {
+                    // The Home page is a two-dimensional grid, not the old
+                    // horizontal favorites strip. Arrows keep their column;
+                    // only at the first/last row do they reach header/inputs.
+                    let columns = HOME_GRID_COLUMNS;
                     match direction {
-                        Direction::Left | Direction::Right => {
-                            let next = if matches!(direction, Direction::Left) {
-                                index.saturating_sub(1)
-                            } else {
-                                (index + 1).min(apps.len() - 1)
-                            };
-                            let id = apps[next].id.clone();
-                            self.focus(Target::App(id), controls);
+                        Direction::Left if index % columns > 0 => {
+                            self.focus(Target::App(apps[index - 1].id.clone()), controls);
+                        }
+                        Direction::Right
+                            if index % columns + 1 < columns && index + 1 < apps.len() =>
+                        {
+                            self.focus(Target::App(apps[index + 1].id.clone()), controls);
+                        }
+                        Direction::Up if index >= columns => {
+                            self.focus(Target::App(apps[index - columns].id.clone()), controls);
                         }
                         Direction::Up => self.focus(Target::Nav(0), controls),
+                        Direction::Down if (index / columns + 1) * columns < apps.len() => {
+                            let next = (index + columns).min(apps.len() - 1);
+                            self.focus(Target::App(apps[next].id.clone()), controls);
+                        }
                         Direction::Down => {
                             let x = controls
                                 .iter()
@@ -1072,6 +1092,7 @@ impl State {
                                 self.focus(next, controls);
                             }
                         }
+                        Direction::Left | Direction::Right => {}
                     }
                     return vec![];
                 }
