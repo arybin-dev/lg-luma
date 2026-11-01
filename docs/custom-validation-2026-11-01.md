@@ -49,3 +49,20 @@ Current TV preferences and Home takeover configuration have **not** yet been bac
 ## Next authorized continuation
 
 Recover/rebuild the IPK, unlock existing SSH access, back up current preferences, uploaded wallpaper data and `/var/lib/luma-home`, then test the new runtime without replacing the active Home. Verify device behavior and a recoverable rollback before installation. VPN and privacy work remain pending and must not block the interface release. Do not infer VPN compatibility from the previously downloaded archive alone.
+
+## Device follow-up — 2026-11-02
+
+This section supersedes the earlier installation blockers and undelivered-artifact status.
+
+- Existing SSH key was unlocked by the owner; root SSH verified.
+- The original Linux workspace recovered, and the existing IPK was saved as `Luma-Custom-5x3-Test.ipk` (Library identity `libfile_7f70a5bbf6288191a2e47282e55eb277`). User downloaded it to the Mac; its SHA-256 matched the package above.
+- Mac backup: `~/LG-Backup/55UN74006LA/custom-before-20261102T000332/luma-current-and-home.tar.gz`, SHA-256 `90973e320079452b6615976c8e4a93dbbaeafac965408c2d06cbba88054968f8`.
+- On-TV original payload, preferences and Home backup: `/media/developer/luma-custom-original-20261102.tar.gz`, SHA-256 `350132878fb6c6f185ba35a94a2ac29303c8f561db49034b9327b97febdea8df`. Recovery script: `/media/developer/luma-custom-rollback-20261102.sh`.
+- Recovery was exercised: restore LG Home, restore original payload/settings, reapply original `fullhome`. The first timed trial also automatically reverted successfully when its four-minute acceptance window expired.
+- Final update used a ten-minute recovery window and was accepted only after the installed binary, mounted Home executable and live `/proc/PID/exe` all matched SHA-256 `66442da0caebaafe4fdbd59e1db76c28c0300e9fae328a924316dfe43e2c1df6`.
+- Custom is installed and running as `com.webos.app.fullhome`; helper status confirms enabled, mounted and boot hook present. Foreground query independently returned `com.webos.app.fullhome`. Acceptance marker `/tmp/luma-custom-accepted` suppresses the trial watchdog.
+- Device log confirms Wayland, GL context, lifecycle registration, focus, inventory of 18 apps / 3 inputs and first frame in about 1.2 seconds. Existing 11 favorites, Russian language, Prism background and disabled weather retained.
+- Physical Magic Remote Home button and subjective on-screen usability still need owner confirmation. No reboot was performed; boot behavior has not been hardware-verified in this session.
+- Direct SSH rendering initially failed due to missing Wayland environment / LS2 identity, not loader failure. The proper installed/SAM-launched app and native Home both rendered successfully. Bounded interactive Luna queries used the canonical `com.webos.service.applicationmanager` service and kept stdin open for replies.
+- Mock-weather rendering suite also completed successfully after the workspace recovered. The earlier general smoke failure for empty Recents remains unresolved; do not describe every smoke suite as passing.
+- VPN and privacy controls remain pending. No VPN routes, DNS or advertising settings changed.
