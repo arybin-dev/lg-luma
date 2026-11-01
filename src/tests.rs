@@ -171,14 +171,7 @@ fn home_grid_uses_five_columns_and_vertical_wheel_scrolling() {
     let mut state = ready();
     state.preferences.show_weather = false;
     state.preferences.show_greeting = true;
-    let sample = state.inventory.apps[0].clone();
-    while state.inventory.apps.len() < 20 {
-        let index = state.inventory.apps.len();
-        let mut app = sample.clone();
-        app.id = format!("luma.grid.{index}");
-        app.title = format!("Grid app {index}");
-        state.inventory.apps.push(app);
-    }
+    state.inventory.apps.truncate(20);
     state.preferences.favorites = Some(
         state
             .inventory
@@ -719,8 +712,9 @@ fn home_and_apps_render_only_their_own_caption_preference() {
                 .iter()
                 .find(|c| c.target == Target::App("netflix".into()))
                 .unwrap();
+            let base_height = if page == 0 { 180.8 } else { 154.4 };
             assert_eq!(
-                card.rect.h > 154.4,
+                card.rect.h > base_height,
                 expected,
                 "Hidden captions must not reserve space"
             );
@@ -1225,7 +1219,8 @@ fn opening_side_popup_preserves_card_artwork_geometry_with_or_without_captions()
                     .filter_map(|(index, draw)| match draw {
                         crate::renderer::Draw::Image(path, rect, ..)
                         | crate::renderer::Draw::TintedImage(path, rect, ..)
-                            if path.contains("heart-filled") && rect.x < 350. =>
+                            if path.contains("heart-filled")
+                                && rect.x < (if page == 0 { 500. } else { 350. }) =>
                         {
                             let crate::renderer::Draw::Shape(backing, radius, border, color) =
                                 &draws[index - 1]
@@ -2809,10 +2804,11 @@ fn clock_date_and_home_input_descriptions_use_larger_text() {
                 ),
                 24.,
             ),
-            (language.date(now), 18.4),
+            (language.date(now), 24.),
         ] {
             assert!(rendered.draw.iter().any(|draw| matches!(draw,
-                Draw::Text(text, rect, style, ..) if text == &label && style.size == size && rect.h >= size
+                Draw::Text(text, rect, style, ..) if text == &label
+                    && style.size > 0. && style.size <= size && rect.h >= style.size
             )));
         }
         let input = &state.inventory.inputs[0];

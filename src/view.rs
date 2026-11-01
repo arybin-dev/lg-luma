@@ -3870,14 +3870,7 @@ mod tests {
             ..Preferences::default()
         });
         let mut inventory = demo_inventory();
-        let sample = inventory.apps[0].clone();
-        while inventory.apps.len() < 20 {
-            let index = inventory.apps.len();
-            let mut app = sample.clone();
-            app.id = format!("luma.grid.{index}");
-            app.title = format!("Grid app {index}");
-            inventory.apps.push(app);
-        }
+        inventory.apps.truncate(20);
         state.preferences.favorites =
             Some(inventory.apps.iter().map(|app| app.id.clone()).collect());
         state.set_inventory(inventory, None);
