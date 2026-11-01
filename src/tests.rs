@@ -206,6 +206,134 @@ fn home_grid_uses_five_columns_and_vertical_wheel_scrolling() {
 }
 
 #[test]
+fn home_grid_wraps_partial_rows_without_changing_five_column_geometry() {
+    for count in [1, 5, 6, 10, 11, 15, 16] {
+        let mut state = ready();
+        state.preferences.show_weather = false;
+        state.preferences.show_greeting = true;
+        state.inventory.apps.truncate(count);
+        state.preferences.favorites = Some(
+            state.inventory.apps.iter().map(|app| app.id.clone()).collect(),
+        );
+        let ids: Vec<_> = state.apps().iter().map(|app| app.id.clone()).collect();
+        assert_eq!(ids.len(), count);
+        let rendered = controls(&state);
+        let cards: Vec<_> = rendered
+            .iter()
+            .filter(|control| matches!(control.target, Target::App(_)))
+            .collect();
+        assert_eq!(cards.len(), count);
+        let columns = crate::state::HOME_GRID_COLUMNS;
+        let width = crate::state::HOME_TILE_WIDTH;
+        let pitch = crate::state::HOME_TILE_PITCH;
+        let row_pitch = crate::state::HOME_GRID_ROW_PITCH;
+        let left = (1920. - columns as f32 * width
+            - (columns - 1) as f32 * (pitch - width)) / 2.;
+        for (index, card) in cards.iter().enumerate() {
+            assert_eq!(card.rect.x, left + (index % columns) as f32 * pitch);
+            assert_eq!(card.rect.y, 250. + (index / columns) as f32 * row_pitch);
+            assert_eq!(card.rect.w, width);
+            assert!(card.rect.x >= 64. && card.rect.x + card.rect.w <= 1856.);
+        }
+        // The first three rows remain on screen; the fourth becomes scrollable.
+        let last = Target::App(ids[count - 1].clone());
+        state.focus(last.clone(), &rendered);
+        assert_eq!(state.focus, last);
+        if count <= 15 {
+            assert_eq!(state.scroll, 0., "{count} favorites should fit");
+        } else {
+            assert!(state.scroll > 0., "fourth row must be revealed");
+            let focused = controls(&state)
+                .into_iter()
+                .find(|card| card.target == last)
+                .unwrap();
+            assert!(focused.rect.y >= 120.8);
+            assert!(focused.rect.y + focused.rect.h <= 1068.);
+        }
+    }
+}
+
+#[test]
+fn home_grid_remote_navigation_moves_by_row_and_column() {
+    let mut state = ready();
+    state.preferences.show_weather = false;
+    state.inventory.apps.truncate(16);
+    state.preferences.favorites = Some(
+        state.inventory.apps.iter().map(|app| app.id.clone()).collect(),
+    );
+    let ids: Vec<_> = state.apps().iter().map(|app| app.id.clone()).collect();
+    assert_eq!(ids.len(), 16);
+    state.direction(Direction::Down, &controls(&state));
+    assert_eq!(state.focus, Target::App(ids[0].clone()));
+    for _ in 0..4 {
+        state.direction(Direction::Right, &controls(&state));
+    }
+    assert_eq!(state.focus, Target::App(ids[4].clone()));
+    state.direction(Direction::Right, &controls(&state));
+    assert_eq!(state.focus, Target::App(ids[4].clone()), "no row-edge wrap");
+    state.direction(Direction::Down, &controls(&state));
+    assert_eq!(state.focus, Target::App(ids[9].clone()));
+    state.direction(Direction::Up, &controls(&state));
+    assert_eq!(state.focus, Target::App(ids[4].clone()));
+    state.focus(Target::App(ids[0].clone()), &controls(&state));
+    state.direction(Direction::Up, &controls(&state));
+    assert_eq!(state.focus, Target::Nav(0));
+    state.focus(Target::App(ids[10].clone()), &controls(&state));
+    state.direction(Direction::Down, &controls(&state));
+    assert_eq!(state.focus, Target::App(ids[15].clone()));
+    assert!(state.scroll > 0., "focused fourth row must scroll into view");
+    state.direction(Direction::Up, &controls(&state));
+    assert_eq!(state.focus, Target::App(ids[10].clone()));
+    state.focus(Target::App(ids[9].clone()), &controls(&state));
+    state.direction(Direction::Down, &controls(&state));
+    assert_eq!(state.focus, Target::App(ids[15].clone()), "partial last row clamps");
+    state.direction(Direction::Down, &controls(&state));
+    assert!(matches!(state.focus, Target::Input(_)), "inputs follow last row");
+}
+
+#[test]
+fn favorite_reordering_follows_grid_arrows_without_crossing_row_edges() {
+    let mut state = ready();
+    state.inventory.apps.truncate(11);
+    state.preferences.favorites = Some(
+        state.inventory.apps.iter().map(|app| app.id.clone()).collect(),
+    );
+    let ids: Vec<_> = state.apps().iter().map(|app| app.id.clone()).collect();
+    state.focus = Target::App(ids[0].clone());
+    state.hold();
+    assert_eq!(state.moving.as_deref(), Some(ids[0].as_str()));
+    assert_eq!(
+        state.direction(Direction::Down, &controls(&state)),
+        vec![Effect::Save]
+    );
+    assert_eq!(state.preferences.favorites.as_ref().unwrap()[5], ids[0]);
+    assert_eq!(
+        state.direction(Direction::Up, &controls(&state)),
+        vec![Effect::Save]
+    );
+    assert_eq!(state.preferences.favorites.as_ref().unwrap()[0], ids[0]);
+    assert!(state.direction(Direction::Left, &controls(&state)).is_empty());
+    assert_eq!(state.preferences.favorites.as_ref().unwrap()[0], ids[0]);
+    assert_eq!(
+        state.direction(Direction::Right, &controls(&state)),
+        vec![Effect::Save]
+    );
+    assert_eq!(state.preferences.favorites.as_ref().unwrap()[1], ids[0]);
+    state.back();
+    assert!(state.moving.is_none());
+
+    state.focus = Target::App(ids[4].clone());
+    state.hold();
+    assert!(state.direction(Direction::Right, &controls(&state)).is_empty());
+    assert_eq!(state.preferences.favorites.as_ref().unwrap()[4], ids[4]);
+    assert_eq!(
+        state.direction(Direction::Down, &controls(&state)),
+        vec![Effect::Save]
+    );
+    assert_eq!(state.preferences.favorites.as_ref().unwrap()[9], ids[4]);
+}
+
+#[test]
 fn widening_favorites_does_not_widen_apps_or_unclip_offscreen_rows() {
     let mut state = ready();
     state.open(1);
