@@ -3,7 +3,7 @@ run-name: "${{ github.event_name == 'push' && format('Main validation and releas
 
 on:
   push:
-    branches: [main]
+    branches: [main, luma-custom-grid]
   pull_request:
   workflow_dispatch:
 
