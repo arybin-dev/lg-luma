@@ -1245,11 +1245,10 @@ fn home(out: &mut Scene, state: &State, assets: &Assets, now: OffsetDateTime) {
         grid_height = HOME_FACE_HEIGHT
             + (apps.len().saturating_sub(1) / columns) as f32 * HOME_GRID_ROW_PITCH
             + if names {
-                18.4
-                    + apps
-                        .iter()
-                        .map(|app| caption_height(state, assets, app, HOME_TILE_WIDTH))
-                        .fold(58.24, f32::max)
+                18.4 + apps
+                    .iter()
+                    .map(|app| caption_height(state, assets, app, HOME_TILE_WIDTH))
+                    .fold(58.24, f32::max)
             } else {
                 0.
             };
@@ -3889,7 +3888,10 @@ mod tests {
             / 2.;
         for (index, control) in tiles.iter().enumerate() {
             assert_eq!(control.rect.x, left + (index % 5) as f32 * HOME_TILE_PITCH);
-            assert_eq!(control.rect.y, 250. + (index / 5) as f32 * HOME_GRID_ROW_PITCH);
+            assert_eq!(
+                control.rect.y,
+                250. + (index / 5) as f32 * HOME_GRID_ROW_PITCH
+            );
             assert_eq!(control.rect.w, HOME_TILE_WIDTH);
         }
         assert!(tiles[14].rect.y + tiles[14].rect.h <= 1080.);
@@ -3899,14 +3901,21 @@ mod tests {
             .preferences
             .date_format
             .format(state.preferences.language, OffsetDateTime::UNIX_EPOCH);
-        assert!(!rendered
-            .draw
-            .iter()
-            .any(|draw| matches!(draw, Draw::Text(label, ..) if label == &date)));
+        assert!(
+            !rendered
+                .draw
+                .iter()
+                .any(|draw| matches!(draw, Draw::Text(label, ..) if label == &date))
+        );
 
         state.preferences.show_greeting = false;
         let mut no_greeting = Scene::new();
-        home(&mut no_greeting, &state, &assets, OffsetDateTime::UNIX_EPOCH);
+        home(
+            &mut no_greeting,
+            &state,
+            &assets,
+            OffsetDateTime::UNIX_EPOCH,
+        );
         let first = no_greeting
             .controls
             .iter()
@@ -3933,7 +3942,14 @@ mod tests {
         let now = OffsetDateTime::UNIX_EPOCH;
         let layout = navigation(&assets, state.preferences.language);
         let mut rendered = Scene::new();
-        header(&mut rendered, &state, &assets, now, layout.items[0].x, layout.items[0].w);
+        header(
+            &mut rendered,
+            &state,
+            &assets,
+            now,
+            layout.items[0].x,
+            layout.items[0].w,
+        );
         let clock = state.preferences.language.clock(
             now,
             state.preferences.hour_24,
@@ -3958,10 +3974,19 @@ mod tests {
 
         state.preferences.show_date = false;
         let mut hidden = Scene::new();
-        header(&mut hidden, &state, &assets, now, layout.items[0].x, layout.items[0].w);
-        assert!(!hidden
-            .draw
-            .iter()
-            .any(|draw| matches!(draw, Draw::Text(value, ..) if value == &date)));
+        header(
+            &mut hidden,
+            &state,
+            &assets,
+            now,
+            layout.items[0].x,
+            layout.items[0].w,
+        );
+        assert!(
+            !hidden
+                .draw
+                .iter()
+                .any(|draw| matches!(draw, Draw::Text(value, ..) if value == &date))
+        );
     }
 }

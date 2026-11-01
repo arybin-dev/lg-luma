@@ -574,12 +574,14 @@ impl State {
         let bottom = self.scroll_bottom();
         let max = controls
             .iter()
-            .filter(|c| {
-                c.scrollable && (!backgrounds || matches!(c.target, Target::Background(_)))
-            })
+            .filter(|c| c.scrollable && (!backgrounds || matches!(c.target, Target::Background(_))))
             .map(|c| c.rect.y + c.rect.h + self.scroll - bottom)
             .fold(0., f32::max);
-        let delta = if self.page == Page::Home && y == 0 { x } else { y };
+        let delta = if self.page == Page::Home && y == 0 {
+            x
+        } else {
+            y
+        };
         self.scroll = (self.scroll - delta as f32 * 90.).clamp(0., max.max(0.));
         self.pointer = true;
         self.dirty = true;
@@ -1021,7 +1023,9 @@ impl State {
                 let next_row = (index / columns + 1) * columns;
                 let next = match direction {
                     Direction::Left if index % columns > 0 => index - 1,
-                    Direction::Right if index % columns + 1 < columns && index + 1 < slots.len() => {
+                    Direction::Right
+                        if index % columns + 1 < columns && index + 1 < slots.len() =>
+                    {
                         index + 1
                     }
                     Direction::Up if index >= columns => index - columns,
