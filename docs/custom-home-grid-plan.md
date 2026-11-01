@@ -3,9 +3,9 @@
 Status: design and implementation planning. No TV deployment authorized by this document.
 
 ## Interface
-- Centered favorites grid, five columns and two to three visible rows.
-- Larger gaps, 4-way Magic Remote navigation, vertical scrolling, correct HDMI input positioning.
-- Preserve wallpaper, favorites, installed apps, and webOS 5/6 Home takeover compatibility.
+- Centered favorites grid, five columns and three visible rows (fourth row when needed), larger tiles, using most of the 1920x1080 Home canvas.
+- Larger gaps, 4-way Magic Remote navigation, vertical scrolling, and correct HDMI input positioning. Put date and clock on the same header line at matching type size. When weather is disabled, collapse its entire reserved region rather than leaving blank space.
+- Preserve wallpaper, favorites, installed apps, and webOS 5/6 Home takeover compatibility. Ensure 3-4 grid rows do not collide with nav, input cards or screen edges; allow content scroll as necessary.
 
 ## Privacy and advertising
 - Offer reversible, explicit toggles for supported LG advertising and telemetry settings.
