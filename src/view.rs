@@ -4,9 +4,9 @@ use crate::{
     model::{App, BACKGROUNDS, CATEGORIES, Input, InputMode},
     renderer::{Color, Draw, TextStyle, WHITE},
     state::{
-        APPS_COLUMNS, Control, HOME_FADE_LEFT, HOME_FADE_RIGHT, HOME_STRIP_LEFT, HOME_STRIP_RIGHT,
-        HOME_TILE_PITCH, HOME_TILE_WIDTH, KEYS, Overlay, Page, Rect, SYSTEM_SECTION, State,
-        Subpage, Target, TextField, WIDGETS_SECTION,
+        APPS_COLUMNS, Control, HOME_GRID_COLUMNS, HOME_GRID_ROW_PITCH, HOME_TILE_PITCH,
+        HOME_TILE_WIDTH, KEYS, Overlay, Page, Rect, SYSTEM_SECTION, State, Subpage, Target,
+        TextField, WIDGETS_SECTION,
     },
     weather::{self, Unit},
 };
@@ -18,6 +18,7 @@ use time::OffsetDateTime;
 
 const MAIN_TOP: f32 = 108.8;
 const FACE_HEIGHT: f32 = 154.4;
+const HOME_FACE_HEIGHT: f32 = 180.8;
 const GRID_PITCH: f32 = 296.4;
 const RECENTS_BACKDROP_OPACITY: f32 = 0.86;
 
@@ -712,14 +713,30 @@ fn header(
         state.preferences.hour_24,
         state.preferences.show_seconds,
     );
+    let clock_style = text(24., 500, -0.03);
     out.text(
-        clock,
+        &clock,
         Rect::new(84., 62.4, 300., 28.8),
-        text(24., 500, -0.03),
+        clock_style,
         WHITE,
         false,
     );
     let layout = navigation(assets, language);
+    if state.preferences.show_date {
+        let date = state.preferences.date_format.format(language, now);
+        let date_x = 84. + assets.width(&clock, clock_style) + 24.;
+        // The localized date is fitted only when it would collide with navigation.
+        let available = layout.surface.x - date_x - 18.;
+        if available > 72. {
+            out.text(
+                &date,
+                Rect::new(date_x, 62.4, available, 28.8),
+                assets.fit_text(&date, clock_style, available),
+                WHITE,
+                false,
+            );
+        }
+    }
     let nav = layout.surface;
     out.shadow(nav, 48., 18., 4., 0.06);
     out.shape(nav, 48., c(0x171c20, 0.72));
@@ -1112,33 +1129,43 @@ fn home(out: &mut Scene, state: &State, assets: &Assets, now: OffsetDateTime) {
     let shift = summary
         .as_ref()
         .map_or(0., |summary| (summary.height + 18.4) / 2.);
-    let top = 223.2 - shift - s;
-    let date_height = if state.preferences.show_date {
-        41.8
+    let compact = !state.preferences.show_weather;
+    // The weather-free layout gives the screen to a three-row grid. Further rows scroll.
+    let grid_y = if compact {
+        if state.preferences.show_greeting {
+            250.
+        } else {
+            196.
+        }
     } else {
-        0.
+        544.8
     };
-    if state.preferences.show_date {
-        out.text(
-            state.preferences.date_format.format(language, now),
-            Rect::new(84., top, 1200., 24.),
-            text(18.4, 600, 0.12),
-            c(0xf5f5f5, 0.72),
-            false,
-        );
-    }
     if state.preferences.show_greeting {
         let greeting = language.greeting(now.hour(), &state.preferences.greeting_name);
-        let greeting_style = text(90.4, 500, -0.065).leading(1.05);
-        let fitted = assets.fit_text(&greeting, greeting_style, 1500.);
-        let height = 95. * fitted.size / greeting_style.size;
-        out.text(
-            &greeting,
-            Rect::new(84., top + date_height + (95. - height) / 2., 1500., height),
-            fitted,
-            WHITE,
-            false,
-        );
+        if compact {
+            let greeting_style = text(48., 500, -0.05).leading(1.05);
+            let fitted = assets.fit_text(&greeting, greeting_style, 1752.);
+            let height = 52. * fitted.size / greeting_style.size;
+            out.text(
+                &greeting,
+                Rect::new(84., 138. + (52. - height) / 2. - s, 1752., height),
+                fitted,
+                WHITE,
+                false,
+            );
+        } else {
+            let top = 223.2 - shift - s;
+            let greeting_style = text(90.4, 500, -0.065).leading(1.05);
+            let fitted = assets.fit_text(&greeting, greeting_style, 1500.);
+            let height = 95. * fitted.size / greeting_style.size;
+            out.text(
+                &greeting,
+                Rect::new(84., top + (95. - height) / 2., 1500., height),
+                fitted,
+                WHITE,
+                false,
+            );
+        }
     }
     if let Some(summary) = summary {
         let greeting_height = if state.preferences.show_greeting {
@@ -1151,12 +1178,12 @@ fn home(out: &mut Scene, state: &State, assets: &Assets, now: OffsetDateTime) {
             state,
             assets,
             summary,
-            top + date_height + greeting_height,
+            223.2 - shift - s + greeting_height,
         );
     }
     out.text(
         language.t("favorites"),
-        Rect::new(84., 478.5 - s, 1000., 31.),
+        Rect::new(84., grid_y - 60. - s, 1000., 31.),
         text(23.2, 550, -0.035).leading(1.3),
         WHITE,
         false,
@@ -1164,7 +1191,7 @@ fn home(out: &mut Scene, state: &State, assets: &Assets, now: OffsetDateTime) {
     if state.moving.is_some() {
         out.text(
             language.t("moveApps"),
-            Rect::new(1686., 485. - s, 150., 24.),
+            Rect::new(1686., grid_y - 53.5 - s, 150., 24.),
             text(14.4, 400, 0.),
             c(0xdedede, 1.),
             true,
@@ -1172,15 +1199,19 @@ fn home(out: &mut Scene, state: &State, assets: &Assets, now: OffsetDateTime) {
     }
     let apps = state.apps();
     let names = state.preferences.show_home_names;
-    let mut grid_height = FACE_HEIGHT;
+    let mut grid_height = HOME_FACE_HEIGHT;
+    let columns = HOME_GRID_COLUMNS;
+    let grid_width = columns as f32 * HOME_TILE_WIDTH
+        + (columns - 1) as f32 * (HOME_TILE_PITCH - HOME_TILE_WIDTH);
+    let grid_left = (1920. - grid_width) / 2.;
     if state.loading && state.inventory.apps.is_empty() {
-        for index in 0..6 {
+        for index in 0..columns {
             out.shape(
                 Rect::new(
-                    84. + index as f32 * GRID_PITCH,
-                    544.8 - s,
-                    270.,
-                    FACE_HEIGHT,
+                    grid_left + index as f32 * HOME_TILE_PITCH,
+                    grid_y - s,
+                    HOME_TILE_WIDTH,
+                    HOME_FACE_HEIGHT,
                 ),
                 19.2,
                 c(0xffffff, 0.06),
@@ -1193,7 +1224,7 @@ fn home(out: &mut Scene, state: &State, assets: &Assets, now: OffsetDateTime) {
             state,
             assets,
             EmptyState {
-                rect: Rect::new(84., 533.6 - s, 1752., 258.7),
+                rect: Rect::new(84., grid_y - 11.2 - s, 1752., 258.7),
                 icon: if error { "alert" } else { "heart" },
                 title: if error {
                     language.t("aLittleHelp")
@@ -1211,32 +1242,20 @@ fn home(out: &mut Scene, state: &State, assets: &Assets, now: OffsetDateTime) {
         grid_height = 247.5;
     }
     if !apps.is_empty() {
-        grid_height = FACE_HEIGHT
+        grid_height = HOME_FACE_HEIGHT
+            + (apps.len().saturating_sub(1) / columns) as f32 * HOME_GRID_ROW_PITCH
             + if names {
-                18.4 + apps
-                    .iter()
-                    .map(|app| caption_height(state, assets, app, HOME_TILE_WIDTH))
-                    .fold(58.24, f32::max)
+                18.4
+                    + apps
+                        .iter()
+                        .map(|app| caption_height(state, assets, app, HOME_TILE_WIDTH))
+                        .fold(58.24, f32::max)
             } else {
                 0.
             };
     }
-    // Like Apple TV's rows, the favourites run to the screen edge: the next tile shows cut off
-    // at the right (and a scrolled-away one at the left), so it is clear the row continues.
-    out.draw.push(Draw::Clip(Some(state.favorites_viewport())));
-    // Soft edges: out to the right from the end of the sixth tile, and in from the left once
-    // the row has scrolled.
-    let left = if state.home_scroll > 0. {
-        [HOME_FADE_LEFT, HOME_STRIP_LEFT]
-    } else {
-        [0., 0.]
-    };
-    out.draw.push(Draw::EdgeFadeX(Some([
-        left[0],
-        left[1],
-        HOME_STRIP_RIGHT,
-        HOME_FADE_RIGHT,
-    ])));
+    // Full five-column grid: artwork, navigation and hit targets use the same rects.
+    out.draw.push(Draw::Clip(Some(state.content_viewport())));
     for (index, app) in apps.iter().enumerate() {
         tile(
             out,
@@ -1244,18 +1263,17 @@ fn home(out: &mut Scene, state: &State, assets: &Assets, now: OffsetDateTime) {
             assets,
             app,
             Rect::new(
-                84. + index as f32 * HOME_TILE_PITCH - state.home_scroll,
-                544.8 - s,
+                grid_left + (index % columns) as f32 * HOME_TILE_PITCH,
+                grid_y + (index / columns) as f32 * HOME_GRID_ROW_PITCH - s,
                 HOME_TILE_WIDTH,
-                FACE_HEIGHT,
+                HOME_FACE_HEIGHT,
             ),
             names,
             false,
         );
     }
-    out.draw.push(Draw::EdgeFadeX(None));
     out.draw.push(Draw::Clip(Some(state.content_viewport())));
-    let input_y = 544.8 + grid_height + 41.6 - s;
+    let input_y = grid_y + grid_height + 41.6 - s;
     let inputs: Vec<_> = state
         .inventory
         .inputs
@@ -3730,7 +3748,7 @@ mod tests {
     }
 
     #[test]
-    fn short_greetings_keep_their_original_style_and_geometry() {
+    fn compact_greetings_keep_their_style_and_geometry() {
         let assets = assets();
         for name in ["", "Ana"] {
             let state = State::new(Preferences {
@@ -3749,13 +3767,15 @@ mod tests {
                     _ => None,
                 })
                 .unwrap();
-            assert_eq!((rect.x, rect.y, rect.w, rect.h), (84., 265., 1500., 95.));
-            assert_eq!(style.size, 90.4);
+            assert_eq!((rect.x, rect.y, rect.w, rect.h), (84., 138., 1752., 52.));
+            assert_eq!(style.size, 48.);
             assert_eq!(style.weight, 500);
-            assert_eq!(style.tracking, -0.065);
+            assert_eq!(style.tracking, -0.05);
         }
     }
 
+    #[test]
+    fn long_localized_greetings_fit_on_one_line_without_changing_the_name() {
     #[test]
     fn long_localized_greetings_fit_on_one_line_without_changing_the_name() {
         let assets = assets();
@@ -3844,67 +3864,113 @@ mod tests {
     }
 
     #[test]
-    fn hidden_home_widgets_collapse_without_moving_favorites_or_inputs() {
+    fn compact_home_centers_five_large_columns_and_scrolls_extra_rows() {
+        let assets = assets();
+        let mut state = State::new(Preferences {
+            show_weather: false,
+            show_greeting: true,
+            ..Preferences::default()
+        });
+        let mut inventory = demo_inventory();
+        let sample = inventory.apps[0].clone();
+        while inventory.apps.len() < 20 {
+            let index = inventory.apps.len();
+            let mut app = sample.clone();
+            app.id = format!("luma.grid.{index}");
+            app.title = format!("Grid app {index}");
+            inventory.apps.push(app);
+        }
+        state.preferences.favorites =
+            Some(inventory.apps.iter().map(|app| app.id.clone()).collect());
+        state.set_inventory(inventory, None);
+
+        let mut rendered = Scene::new();
+        home(&mut rendered, &state, &assets, OffsetDateTime::UNIX_EPOCH);
+        let tiles: Vec<_> = rendered
+            .controls
+            .iter()
+            .filter(|control| matches!(control.target, Target::App(_)))
+            .collect();
+        assert_eq!(tiles.len(), 20);
+        let left = (1920.
+            - (HOME_GRID_COLUMNS as f32 * HOME_TILE_WIDTH
+                + (HOME_GRID_COLUMNS - 1) as f32 * (HOME_TILE_PITCH - HOME_TILE_WIDTH)))
+            / 2.;
+        for (index, control) in tiles.iter().enumerate() {
+            assert_eq!(control.rect.x, left + (index % 5) as f32 * HOME_TILE_PITCH);
+            assert_eq!(control.rect.y, 250. + (index / 5) as f32 * HOME_GRID_ROW_PITCH);
+            assert_eq!(control.rect.w, HOME_TILE_WIDTH);
+        }
+        assert!(tiles[14].rect.y + tiles[14].rect.h <= 1080.);
+        assert!(tiles[15].rect.y > tiles[10].rect.y);
+        // The date lives in the header, not the former weather/date body block.
+        let date = state
+            .preferences
+            .date_format
+            .format(state.preferences.language, OffsetDateTime::UNIX_EPOCH);
+        assert!(!rendered
+            .draw
+            .iter()
+            .any(|draw| matches!(draw, Draw::Text(label, ..) if label == &date)));
+
+        state.preferences.show_greeting = false;
+        let mut no_greeting = Scene::new();
+        home(&mut no_greeting, &state, &assets, OffsetDateTime::UNIX_EPOCH);
+        let first = no_greeting
+            .controls
+            .iter()
+            .find(|control| matches!(control.target, Target::App(_)))
+            .unwrap();
+        assert_eq!(first.rect.y, 196.);
+
+        state.preferences.show_weather = true;
+        let mut weather = Scene::new();
+        home(&mut weather, &state, &assets, OffsetDateTime::UNIX_EPOCH);
+        let first = weather
+            .controls
+            .iter()
+            .find(|control| matches!(control.target, Target::App(_)))
+            .unwrap();
+        assert_eq!(first.rect.y, 544.8);
+    }
+
+    #[test]
+    fn header_positions_date_beside_clock_without_covering_navigation() {
         let assets = assets();
         let mut state = State::new(Preferences::default());
-        state.set_inventory(demo_inventory(), None);
-        let mut original = Scene::new();
-        home(&mut original, &state, &assets, OffsetDateTime::UNIX_EPOCH);
-        let weather_y = |scene: &Scene| {
-            scene
-                .controls
-                .iter()
-                .find(|control| control.target == Target::WeatherConfigure)
-                .unwrap()
-                .rect
-                .y
+        state.preferences.date_format = crate::model::DateFormat::DayMonthYear;
+        let now = OffsetDateTime::UNIX_EPOCH;
+        let layout = navigation(&assets, state.preferences.language);
+        let mut rendered = Scene::new();
+        header(&mut rendered, &state, &assets, now, layout.items[0].x, layout.items[0].w);
+        let clock = state.preferences.language.clock(
+            now,
+            state.preferences.hour_24,
+            state.preferences.show_seconds,
+        );
+        let date = state
+            .preferences
+            .date_format
+            .format(state.preferences.language, now);
+        let find = |label: &str| {
+            rendered.draw.iter().find_map(|draw| match draw {
+                Draw::Text(value, rect, style, ..) if value == label => Some((rect, style)),
+                _ => None,
+            })
         };
-        let original_y = weather_y(&original);
-        for show_date in [false, true] {
-            for show_greeting in [false, true] {
-                state.preferences.show_date = show_date;
-                state.preferences.show_greeting = show_greeting;
-                let mut rendered = Scene::new();
-                home(&mut rendered, &state, &assets, OffsetDateTime::UNIX_EPOCH);
-                let removed = if show_date { 0. } else { 41.8 }
-                    + if show_greeting { 0. } else { 94.92 + 18.4 };
-                assert!((weather_y(&rendered) - (original_y - removed)).abs() < 0.001);
-                for control in original
-                    .controls
-                    .iter()
-                    .filter(|control| matches!(control.target, Target::App(_) | Target::Input(_)))
-                {
-                    let other = rendered
-                        .controls
-                        .iter()
-                        .find(|other| other.target == control.target)
-                        .unwrap();
-                    assert_eq!(
-                        (control.rect.x, control.rect.y),
-                        (other.rect.x, other.rect.y)
-                    );
-                }
-                if show_date && !show_greeting {
-                    let date_y = rendered
-                        .draw
-                        .iter()
-                        .find_map(|draw| match draw {
-                            Draw::Text(label, rect, ..)
-                                if label
-                                    == &state
-                                        .preferences
-                                        .language
-                                        .date(OffsetDateTime::UNIX_EPOCH) =>
-                            {
-                                Some(rect.y)
-                            }
-                            _ => None,
-                        })
-                        .unwrap();
-                    // Weather's control includes padding around the summary itself.
-                    assert!((weather_y(&rendered) - date_y).abs() < 60.);
-                }
-            }
-        }
+        let (clock_rect, clock_style) = find(&clock).unwrap();
+        let (date_rect, date_style) = find(&date).unwrap();
+        assert_eq!(clock_style.size, date_style.size);
+        assert_eq!(clock_rect.y, date_rect.y);
+        assert!(date_rect.x > clock_rect.x);
+        assert!(date_rect.x + date_rect.w <= layout.surface.x);
+
+        state.preferences.show_date = false;
+        let mut hidden = Scene::new();
+        header(&mut hidden, &state, &assets, now, layout.items[0].x, layout.items[0].w);
+        assert!(!hidden
+            .draw
+            .iter()
+            .any(|draw| matches!(draw, Draw::Text(value, ..) if value == &date)));
     }
 }

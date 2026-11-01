@@ -167,41 +167,53 @@ fn controls(state: &State) -> Vec<crate::state::Control> {
 }
 
 #[test]
-fn favorites_edge_fragments_share_draw_hit_and_wheel_viewports() {
+fn home_grid_uses_five_columns_and_vertical_wheel_scrolling() {
     let mut state = ready();
-    let favorites: Vec<_> = state
-        .inventory
-        .apps
+    state.preferences.show_weather = false;
+    state.preferences.show_greeting = true;
+    let sample = state.inventory.apps[0].clone();
+    while state.inventory.apps.len() < 20 {
+        let index = state.inventory.apps.len();
+        let mut app = sample.clone();
+        app.id = format!("luma.grid.{index}");
+        app.title = format!("Grid app {index}");
+        state.inventory.apps.push(app);
+    }
+    state.preferences.favorites = Some(
+        state
+            .inventory
+            .apps
+            .iter()
+            .map(|app| app.id.clone())
+            .collect(),
+    );
+    let original = controls(&state);
+    let cards: Vec<_> = original
         .iter()
-        .take(9)
-        .map(|app| app.id.clone())
+        .filter(|control| matches!(control.target, Target::App(_)))
         .collect();
-    state.preferences.favorites = Some(favorites.clone());
+    assert_eq!(cards.len(), 20);
+    assert_eq!(cards[0].rect.y, cards[4].rect.y);
     assert_eq!(
-        state.hit_test(&controls(&state), 1860., 600.),
-        Some(Target::App(favorites[6].clone()))
+        cards[5].rect.y - cards[0].rect.y,
+        crate::state::HOME_GRID_ROW_PITCH
     );
-    assert!(state.wheel_scroll(&controls(&state), Some((1860., 600.)), 0, -1));
-    assert!((state.home_scroll - crate::state::HOME_TILE_PITCH).abs() < 0.01);
-    assert_eq!(state.scroll, 0.);
-    assert_eq!(
-        state.hit_test(&controls(&state), 40., 600.),
-        Some(Target::App(favorites[0].clone()))
-    );
-    let scroll = state.home_scroll;
-    state.pointer_focus(Target::App(favorites[0].clone()));
-    assert_eq!(state.home_scroll, scroll);
-    assert!(state.hit_test(&controls(&state), 4., 600.).is_none());
-    assert!(state.hit_test(&controls(&state), 1915., 600.).is_none());
-    assert!(state.hit_test(&controls(&state), 40., 1060.).is_none());
-    let scene = scene(&state);
-    let viewport = state.favorites_viewport();
-    assert!(scene.draw.iter().any(|draw| matches!(draw, crate::renderer::Draw::Clip(Some(rect)) if rect.x == viewport.x && rect.w == viewport.w)));
-    assert!(state.wheel_scroll(&scene.controls, Some((40., 600.)), 0, 1));
+    assert!(state.hit_test(
+        &original,
+        cards[0].rect.x + 20.,
+        cards[0].rect.y + 20.
+    ).is_some());
+    assert!(state.hit_test(&original, 4., 600.).is_none());
+    assert!(state.hit_test(&original, 1915., 600.).is_none());
+    assert!(!state.wheel_scroll(&original, Some((500., 600.)), 0, -1));
+    assert!(state.scroll > 0.);
     assert_eq!(state.home_scroll, 0.);
+    assert!(!state.wheel_scroll(&controls(&state), Some((500., 600.)), 0, 1));
     assert_eq!(state.scroll, 0.);
 }
 
+#[test]
+fn widening_favorites_does_not_widen_apps_or_unclip_offscreen_rows() {
 #[test]
 fn widening_favorites_does_not_widen_apps_or_unclip_offscreen_rows() {
     let mut state = ready();
