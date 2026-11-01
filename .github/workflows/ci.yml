@@ -105,6 +105,9 @@ jobs:
           - suite: Navigation and rendering
             script: tests/smoke.mjs
             artifact: navigation
+          - suite: Custom five-column grid
+            script: tests/custom-grid-smoke.mjs
+            artifact: custom-grid
           - suite: Brand gallery
             script: tests/brands-smoke.mjs
             artifact: brands
