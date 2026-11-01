@@ -3776,8 +3776,6 @@ mod tests {
 
     #[test]
     fn long_localized_greetings_fit_on_one_line_without_changing_the_name() {
-    #[test]
-    fn long_localized_greetings_fit_on_one_line_without_changing_the_name() {
         let assets = assets();
         let base = text(90.4, 500, -0.065).leading(1.05);
         for language in Language::ALL {

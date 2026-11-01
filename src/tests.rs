@@ -214,8 +214,6 @@ fn home_grid_uses_five_columns_and_vertical_wheel_scrolling() {
 
 #[test]
 fn widening_favorites_does_not_widen_apps_or_unclip_offscreen_rows() {
-#[test]
-fn widening_favorites_does_not_widen_apps_or_unclip_offscreen_rows() {
     let mut state = ready();
     state.open(1);
     let control = crate::state::Control {
