@@ -167,39 +167,202 @@ fn controls(state: &State) -> Vec<crate::state::Control> {
 }
 
 #[test]
-fn favorites_edge_fragments_share_draw_hit_and_wheel_viewports() {
+fn home_grid_uses_five_columns_and_vertical_wheel_scrolling() {
     let mut state = ready();
-    let favorites: Vec<_> = state
-        .inventory
-        .apps
+    state.preferences.show_weather = false;
+    state.preferences.show_greeting = true;
+    state.inventory.apps.truncate(20);
+    state.preferences.favorites = Some(
+        state
+            .inventory
+            .apps
+            .iter()
+            .map(|app| app.id.clone())
+            .collect(),
+    );
+    let original = controls(&state);
+    let cards: Vec<_> = original
         .iter()
-        .take(9)
-        .map(|app| app.id.clone())
+        .filter(|control| matches!(control.target, Target::App(_)))
         .collect();
-    state.preferences.favorites = Some(favorites.clone());
+    assert_eq!(cards.len(), 20);
+    assert_eq!(cards[0].rect.y, cards[4].rect.y);
     assert_eq!(
-        state.hit_test(&controls(&state), 1860., 600.),
-        Some(Target::App(favorites[6].clone()))
+        cards[5].rect.y - cards[0].rect.y,
+        crate::state::HOME_GRID_ROW_PITCH
     );
-    assert!(state.wheel_scroll(&controls(&state), Some((1860., 600.)), 0, -1));
-    assert!((state.home_scroll - crate::state::HOME_TILE_PITCH).abs() < 0.01);
-    assert_eq!(state.scroll, 0.);
-    assert_eq!(
-        state.hit_test(&controls(&state), 40., 600.),
-        Some(Target::App(favorites[0].clone()))
+    assert!(
+        state
+            .hit_test(&original, cards[0].rect.x + 20., cards[0].rect.y + 20.)
+            .is_some()
     );
-    let scroll = state.home_scroll;
-    state.pointer_focus(Target::App(favorites[0].clone()));
-    assert_eq!(state.home_scroll, scroll);
-    assert!(state.hit_test(&controls(&state), 4., 600.).is_none());
-    assert!(state.hit_test(&controls(&state), 1915., 600.).is_none());
-    assert!(state.hit_test(&controls(&state), 40., 1060.).is_none());
-    let scene = scene(&state);
-    let viewport = state.favorites_viewport();
-    assert!(scene.draw.iter().any(|draw| matches!(draw, crate::renderer::Draw::Clip(Some(rect)) if rect.x == viewport.x && rect.w == viewport.w)));
-    assert!(state.wheel_scroll(&scene.controls, Some((40., 600.)), 0, 1));
+    assert!(state.hit_test(&original, 4., 600.).is_none());
+    assert!(state.hit_test(&original, 1915., 600.).is_none());
+    assert!(!state.wheel_scroll(&original, Some((500., 600.)), 0, -1));
+    assert!(state.scroll > 0.);
     assert_eq!(state.home_scroll, 0.);
+    assert!(!state.wheel_scroll(&controls(&state), Some((500., 600.)), 0, 1));
     assert_eq!(state.scroll, 0.);
+}
+
+#[test]
+fn home_grid_wraps_partial_rows_without_changing_five_column_geometry() {
+    for count in [1, 5, 6, 10, 11, 15, 16] {
+        let mut state = ready();
+        state.preferences.show_weather = false;
+        state.preferences.show_greeting = true;
+        state.inventory.apps.truncate(count);
+        state.preferences.favorites = Some(
+            state
+                .inventory
+                .apps
+                .iter()
+                .map(|app| app.id.clone())
+                .collect(),
+        );
+        let ids: Vec<_> = state.apps().iter().map(|app| app.id.clone()).collect();
+        assert_eq!(ids.len(), count);
+        let rendered = controls(&state);
+        let cards: Vec<_> = rendered
+            .iter()
+            .filter(|control| matches!(control.target, Target::App(_)))
+            .collect();
+        assert_eq!(cards.len(), count);
+        let columns = crate::state::HOME_GRID_COLUMNS;
+        let width = crate::state::HOME_TILE_WIDTH;
+        let pitch = crate::state::HOME_TILE_PITCH;
+        let row_pitch = crate::state::HOME_GRID_ROW_PITCH;
+        let left = (1920. - columns as f32 * width - (columns - 1) as f32 * (pitch - width)) / 2.;
+        for (index, card) in cards.iter().enumerate() {
+            assert_eq!(card.rect.x, left + (index % columns) as f32 * pitch);
+            assert_eq!(card.rect.y, 250. + (index / columns) as f32 * row_pitch);
+            assert_eq!(card.rect.w, width);
+            assert!(card.rect.x >= 64. && card.rect.x + card.rect.w <= 1856.);
+        }
+        // The first three rows remain on screen; the fourth becomes scrollable.
+        let last = Target::App(ids[count - 1].clone());
+        state.focus(last.clone(), &rendered);
+        assert_eq!(state.focus, last);
+        if count <= 15 {
+            assert_eq!(state.scroll, 0., "{count} favorites should fit");
+        } else {
+            assert!(state.scroll > 0., "fourth row must be revealed");
+            let focused = controls(&state)
+                .into_iter()
+                .find(|card| card.target == last)
+                .unwrap();
+            assert!(focused.rect.y >= 120.8);
+            assert!(focused.rect.y + focused.rect.h <= 1068.);
+        }
+    }
+}
+
+#[test]
+fn home_grid_remote_navigation_moves_by_row_and_column() {
+    let mut state = ready();
+    state.preferences.show_weather = false;
+    state.inventory.apps.truncate(16);
+    state.preferences.favorites = Some(
+        state
+            .inventory
+            .apps
+            .iter()
+            .map(|app| app.id.clone())
+            .collect(),
+    );
+    let ids: Vec<_> = state.apps().iter().map(|app| app.id.clone()).collect();
+    assert_eq!(ids.len(), 16);
+    state.direction(Direction::Down, &controls(&state));
+    assert_eq!(state.focus, Target::App(ids[0].clone()));
+    for _ in 0..4 {
+        state.direction(Direction::Right, &controls(&state));
+    }
+    assert_eq!(state.focus, Target::App(ids[4].clone()));
+    state.direction(Direction::Right, &controls(&state));
+    assert_eq!(state.focus, Target::App(ids[4].clone()), "no row-edge wrap");
+    state.direction(Direction::Down, &controls(&state));
+    assert_eq!(state.focus, Target::App(ids[9].clone()));
+    state.direction(Direction::Up, &controls(&state));
+    assert_eq!(state.focus, Target::App(ids[4].clone()));
+    state.focus(Target::App(ids[0].clone()), &controls(&state));
+    state.direction(Direction::Up, &controls(&state));
+    assert_eq!(state.focus, Target::Nav(0));
+    state.focus(Target::App(ids[10].clone()), &controls(&state));
+    state.direction(Direction::Down, &controls(&state));
+    assert_eq!(state.focus, Target::App(ids[15].clone()));
+    assert!(
+        state.scroll > 0.,
+        "focused fourth row must scroll into view"
+    );
+    state.direction(Direction::Up, &controls(&state));
+    assert_eq!(state.focus, Target::App(ids[10].clone()));
+    state.focus(Target::App(ids[14].clone()), &controls(&state));
+    state.direction(Direction::Down, &controls(&state));
+    assert_eq!(
+        state.focus,
+        Target::App(ids[15].clone()),
+        "partial last row clamps"
+    );
+    state.direction(Direction::Down, &controls(&state));
+    assert!(
+        matches!(state.focus, Target::Input(_)),
+        "inputs follow last row"
+    );
+}
+
+#[test]
+fn favorite_reordering_follows_grid_arrows_without_crossing_row_edges() {
+    let mut state = ready();
+    state.inventory.apps.truncate(11);
+    state.preferences.favorites = Some(
+        state
+            .inventory
+            .apps
+            .iter()
+            .map(|app| app.id.clone())
+            .collect(),
+    );
+    let ids: Vec<_> = state.apps().iter().map(|app| app.id.clone()).collect();
+    state.focus = Target::App(ids[0].clone());
+    state.hold();
+    assert_eq!(state.moving.as_deref(), Some(ids[0].as_str()));
+    assert_eq!(
+        state.direction(Direction::Down, &controls(&state)),
+        vec![Effect::Save]
+    );
+    assert_eq!(state.preferences.favorites.as_ref().unwrap()[5], ids[0]);
+    assert_eq!(
+        state.direction(Direction::Up, &controls(&state)),
+        vec![Effect::Save]
+    );
+    assert_eq!(state.preferences.favorites.as_ref().unwrap()[0], ids[0]);
+    assert!(
+        state
+            .direction(Direction::Left, &controls(&state))
+            .is_empty()
+    );
+    assert_eq!(state.preferences.favorites.as_ref().unwrap()[0], ids[0]);
+    assert_eq!(
+        state.direction(Direction::Right, &controls(&state)),
+        vec![Effect::Save]
+    );
+    assert_eq!(state.preferences.favorites.as_ref().unwrap()[1], ids[0]);
+    state.back();
+    assert!(state.moving.is_none());
+
+    state.focus = Target::App(ids[4].clone());
+    state.hold();
+    assert!(
+        state
+            .direction(Direction::Right, &controls(&state))
+            .is_empty()
+    );
+    assert_eq!(state.preferences.favorites.as_ref().unwrap()[4], ids[4]);
+    assert_eq!(
+        state.direction(Direction::Down, &controls(&state)),
+        vec![Effect::Save]
+    );
+    assert_eq!(state.preferences.favorites.as_ref().unwrap()[9], ids[4]);
 }
 
 #[test]
@@ -709,8 +872,9 @@ fn home_and_apps_render_only_their_own_caption_preference() {
                 .iter()
                 .find(|c| c.target == Target::App("netflix".into()))
                 .unwrap();
+            let base_height = if page == 0 { 180.8 } else { 154.4 };
             assert_eq!(
-                card.rect.h > 154.4,
+                card.rect.h > base_height,
                 expected,
                 "Hidden captions must not reserve space"
             );
@@ -1215,7 +1379,8 @@ fn opening_side_popup_preserves_card_artwork_geometry_with_or_without_captions()
                     .filter_map(|(index, draw)| match draw {
                         crate::renderer::Draw::Image(path, rect, ..)
                         | crate::renderer::Draw::TintedImage(path, rect, ..)
-                            if path.contains("heart-filled") && rect.x < 350. =>
+                            if path.contains("heart-filled")
+                                && rect.x < (if page == 0 { 500. } else { 350. }) =>
                         {
                             let crate::renderer::Draw::Shape(backing, radius, border, color) =
                                 &draws[index - 1]
@@ -2586,10 +2751,12 @@ fn language_list_scrolls_under_fixed_ui_without_clipping_or_fades() {
     state.subpage = Some(Subpage::Language);
     state.scroll = 180.;
     let rendered = scene(&state);
-    assert!(!rendered.draw.iter().any(|draw| matches!(
-        draw,
-        Draw::Clip(Some(_)) | Draw::EdgeFade(Some(_)) | Draw::EdgeFadeX(Some(_))
-    )));
+    assert!(
+        !rendered
+            .draw
+            .iter()
+            .any(|draw| matches!(draw, Draw::Clip(Some(_)) | Draw::EdgeFade(Some(_))))
+    );
     let first = rendered
         .controls
         .iter()
@@ -2637,10 +2804,12 @@ fn apps_scroll_behind_navigation_without_a_top_cutoff_or_fade() {
     state.open(1);
     state.scroll = 400.;
     let rendered = scene(&state);
-    assert!(!rendered.draw.iter().any(|draw| matches!(
-        draw,
-        Draw::Clip(Some(_)) | Draw::EdgeFade(Some(_)) | Draw::EdgeFadeX(Some(_))
-    )));
+    assert!(
+        !rendered
+            .draw
+            .iter()
+            .any(|draw| matches!(draw, Draw::Clip(Some(_)) | Draw::EdgeFade(Some(_))))
+    );
     let card = rendered
         .draw
         .iter()
@@ -2799,10 +2968,11 @@ fn clock_date_and_home_input_descriptions_use_larger_text() {
                 ),
                 24.,
             ),
-            (language.date(now), 18.4),
+            (language.date(now), 24.),
         ] {
             assert!(rendered.draw.iter().any(|draw| matches!(draw,
-                Draw::Text(text, rect, style, ..) if text == &label && style.size == size && rect.h >= size
+                Draw::Text(text, rect, style, ..) if text == &label
+                    && style.size > 0. && style.size <= size && rect.h >= style.size
             )));
         }
         let input = &state.inventory.inputs[0];

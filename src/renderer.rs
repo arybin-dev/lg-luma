@@ -70,8 +70,6 @@ pub enum Draw {
     AppImage(Arc<crate::app_artwork::Artwork>, Rect, Color),
     Clip(Option<Rect>),
     EdgeFade(Option<[f32; 4]>),
-    /// Horizontal counterpart: [left fade-in start, end, right fade-out start, end].
-    EdgeFadeX(Option<[f32; 4]>),
 }
 
 struct Texture {
@@ -296,7 +294,7 @@ fn profile_skip(command: &Draw) -> bool {
         Draw::RoundedGradient(..) => "gradient",
         Draw::Shadow(..) => "shadow",
         Draw::Text(..) => "text",
-        Draw::Clip(_) | Draw::EdgeFade(_) | Draw::EdgeFadeX(_) => return false,
+        Draw::Clip(_) | Draw::EdgeFade(_) => return false,
     };
     skip.iter().any(|entry| entry == kind || entry == "all")
 }
@@ -1245,7 +1243,6 @@ impl Renderer {
                 Draw::AppImage(image, rect, tint) => self.app_image(image, *rect, *tint),
                 Draw::Clip(clip) => self.clip = *clip,
                 Draw::EdgeFade(fade) => self.set_fade(0, *fade),
-                Draw::EdgeFadeX(fade) => self.set_fade(4, *fade),
             }
         }
     }

@@ -17,14 +17,11 @@ pub const APPS_COLUMNS: usize = 6;
 /// Automatic inventory retries before the error shows: with the 6.5 s Luna timeout about 50 s.
 pub const INVENTORY_RETRIES: u32 = 5;
 pub const INVENTORY_RETRY_DELAY: Duration = Duration::from_secs(2);
-pub const HOME_STRIP_LEFT: f32 = 84.;
-// Six favourites in full and the seventh cut off and fading out at the right (Apple TV rows):
-// the strip ends after the sixth tile, so a focused tile never sits in the fade.
-pub const HOME_STRIP_RIGHT: f32 = 1748.;
-pub const HOME_TILE_WIDTH: f32 = 256.;
-pub const HOME_TILE_PITCH: f32 = 281.6;
-pub const HOME_FADE_LEFT: f32 = 8.;
-pub const HOME_FADE_RIGHT: f32 = 1910.;
+// Five columns of larger launcher cards. The Home view scrolls vertically.
+pub const HOME_TILE_WIDTH: f32 = 300.;
+pub const HOME_TILE_PITCH: f32 = 344.;
+pub const HOME_GRID_COLUMNS: usize = 5;
+pub const HOME_GRID_ROW_PITCH: f32 = 260.;
 pub const BACKGROUND_FADE: f32 = 0.4;
 pub const CYCLE_FADE: f32 = 1.6;
 
@@ -526,13 +523,7 @@ impl State {
     }
 
     pub fn favorites_viewport(&self) -> Rect {
-        let content = self.content_viewport();
-        let left = if self.home_scroll > 0. {
-            HOME_FADE_LEFT
-        } else {
-            0.
-        };
-        Rect::new(left, content.y, HOME_FADE_RIGHT - left, content.h)
+        self.content_viewport()
     }
 
     pub fn apps_viewport(&self) -> Rect {
@@ -565,7 +556,8 @@ impl State {
             .map(|control| control.target.clone())
     }
 
-    /// Returns whether this wheel event scrolled favorites, so a pending card press is cancelled.
+    /// The Home grid scrolls with the page instead of using a horizontal strip.
+    /// Returns false because wheel input never advances a separate favorites strip.
     pub fn wheel_scroll(
         &mut self,
         controls: &[Control],
@@ -579,51 +571,27 @@ impl State {
         {
             return false;
         }
-        let over_favorites = self.page == Page::Home
-            && position.is_some_and(|(x, y)| {
-                self.favorites_viewport().contains(x, y)
-                    && controls.iter().any(|control| {
-                        matches!(control.target, Target::App(_)) && control.rect.contains(x, y)
-                    })
-            });
-        let favorites = self.page == Page::Home && (x != 0 || over_favorites);
-        if favorites {
-            self.scroll_favorites((if x != 0 { x } else { -y }) as f32 * HOME_TILE_PITCH);
+        let bottom = self.scroll_bottom();
+        let max = controls
+            .iter()
+            .filter(|c| c.scrollable && (!backgrounds || matches!(c.target, Target::Background(_))))
+            .map(|c| c.rect.y + c.rect.h + self.scroll - bottom)
+            .fold(0., f32::max);
+        let delta = if self.page == Page::Home && y == 0 {
+            x
         } else {
-            let bottom = self.scroll_bottom();
-            let max = controls
-                .iter()
-                .filter(|c| {
-                    c.scrollable && (!backgrounds || matches!(c.target, Target::Background(_)))
-                })
-                .map(|c| c.rect.y + c.rect.h + self.scroll - bottom)
-                .fold(0., f32::max);
-            self.scroll = (self.scroll - y as f32 * 90.).clamp(0., max.max(0.));
-        }
+            y
+        };
+        self.scroll = (self.scroll - delta as f32 * 90.).clamp(0., max.max(0.));
         self.pointer = true;
         self.dirty = true;
-        favorites
+        false
     }
 
-    pub fn scroll_favorites(&mut self, delta: f32) {
-        let count = self
-            .preferences
-            .favorites(&self.inventory.apps)
-            .iter()
-            .filter(|id| {
-                !self.preferences.hidden.contains(id)
-                    && self.inventory.apps.iter().any(|app| &app.id == *id)
-            })
-            .count();
-        let content = if count == 0 {
-            0.
-        } else {
-            (count - 1) as f32 * HOME_TILE_PITCH + HOME_TILE_WIDTH
-        };
-        let max = (content - (HOME_STRIP_RIGHT - HOME_STRIP_LEFT)).max(0.);
-        let next = (self.home_scroll + delta).clamp(0., max);
-        if next != self.home_scroll {
-            self.home_scroll = next;
+    /// Legacy horizontal scroll state must never displace the new grid.
+    pub fn scroll_favorites(&mut self, _delta: f32) {
+        if self.home_scroll != 0. {
+            self.home_scroll = 0.;
             self.dirty = true;
         }
     }
@@ -725,7 +693,7 @@ impl State {
         match self.page {
             Page::Home => self
                 .apps()
-                .get(((self.home_scroll - 0.01).max(0.) / HOME_TILE_PITCH).ceil() as usize)
+                .first()
                 .map(|app| Target::App(app.id.clone()))
                 .unwrap_or(if self.error.is_some() {
                     Target::Retry
@@ -761,13 +729,6 @@ impl State {
         let previous = self.scroll;
         let previous_home = self.home_scroll;
         if let Some(control) = controls.iter().find(|c| c.target == self.focus) {
-            if self.page == Page::Home && matches!(self.focus, Target::App(_)) {
-                if control.rect.x < HOME_STRIP_LEFT {
-                    self.home_scroll += control.rect.x - HOME_STRIP_LEFT;
-                } else if control.rect.x + control.rect.w > HOME_STRIP_RIGHT {
-                    self.home_scroll += control.rect.x + control.rect.w - HOME_STRIP_RIGHT;
-                }
-            }
             if matches!(
                 self.focus,
                 Target::Nav(_)
@@ -1056,9 +1017,21 @@ impl State {
                 })
                 .collect();
             if let Some(index) = slots.iter().position(|slot| ids[*slot] == id) {
+                // Reordering follows the visible five-column grid. Hidden or
+                // unavailable favorites do not consume grid slots.
+                let columns = HOME_GRID_COLUMNS;
+                let next_row = (index / columns + 1) * columns;
                 let next = match direction {
-                    Direction::Left => index.saturating_sub(1),
-                    Direction::Right => (index + 1).min(slots.len() - 1),
+                    Direction::Left if index % columns > 0 => index - 1,
+                    Direction::Right
+                        if index % columns + 1 < columns && index + 1 < slots.len() =>
+                    {
+                        index + 1
+                    }
+                    Direction::Up if index >= columns => index - columns,
+                    Direction::Down if next_row < slots.len() => {
+                        (index + columns).min(slots.len() - 1)
+                    }
                     _ => index,
                 };
                 if next != index {
@@ -1076,17 +1049,27 @@ impl State {
             {
                 let apps = self.apps();
                 if let Some(index) = apps.iter().position(|app| &app.id == id) {
+                    // The Home page is a two-dimensional grid, not the old
+                    // horizontal favorites strip. Arrows keep their column;
+                    // only at the first/last row do they reach header/inputs.
+                    let columns = HOME_GRID_COLUMNS;
                     match direction {
-                        Direction::Left | Direction::Right => {
-                            let next = if matches!(direction, Direction::Left) {
-                                index.saturating_sub(1)
-                            } else {
-                                (index + 1).min(apps.len() - 1)
-                            };
-                            let id = apps[next].id.clone();
-                            self.focus(Target::App(id), controls);
+                        Direction::Left if index % columns > 0 => {
+                            self.focus(Target::App(apps[index - 1].id.clone()), controls);
+                        }
+                        Direction::Right
+                            if index % columns + 1 < columns && index + 1 < apps.len() =>
+                        {
+                            self.focus(Target::App(apps[index + 1].id.clone()), controls);
+                        }
+                        Direction::Up if index >= columns => {
+                            self.focus(Target::App(apps[index - columns].id.clone()), controls);
                         }
                         Direction::Up => self.focus(Target::Nav(0), controls),
+                        Direction::Down if (index / columns + 1) * columns < apps.len() => {
+                            let next = (index + columns).min(apps.len() - 1);
+                            self.focus(Target::App(apps[next].id.clone()), controls);
+                        }
                         Direction::Down => {
                             let x = controls
                                 .iter()
@@ -1113,6 +1096,7 @@ impl State {
                                 self.focus(next, controls);
                             }
                         }
+                        Direction::Left | Direction::Right => {}
                     }
                     return vec![];
                 }
@@ -1506,12 +1490,6 @@ impl State {
         let next = controls
             .iter()
             .filter(|candidate| candidate.target != self.focus)
-            .filter(|candidate| {
-                self.page != Page::Home
-                    || !matches!(candidate.target, Target::App(_))
-                    || (candidate.rect.x >= HOME_STRIP_LEFT - 0.1
-                        && candidate.rect.x + candidate.rect.w <= HOME_STRIP_RIGHT + 0.1)
-            })
             .filter_map(|candidate| {
                 // Header controls never steal an Up route from the active tab.
                 if self.overlay.is_none()
